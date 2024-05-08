@@ -1,15 +1,17 @@
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Application;
-import javafx.beans.property.DoubleProperty;
-import javafx.beans.property.SimpleDoubleProperty;
 import javafx.concurrent.Task;
+import javafx.geometry.Insets;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.ProgressBar;
+import javafx.scene.control.*;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -26,10 +28,17 @@ public class ZippityDooGUI extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        VBox root = new VBox(10);
+        BorderPane root = new BorderPane();
+        VBox centerBox = new VBox(10);
+        centerBox.setPadding(new Insets(20));
+        root.setCenter(centerBox);
 
         statusLabel = new Label("Select a zip file and extraction destination");
         progressBar = new ProgressBar();
+        progressBar.prefWidthProperty().bind(centerBox.widthProperty());
+        progressBar.setPrefHeight(20);
+        progressBar.setVisible(false);
+
         extractButton = new Button("Extract");
         extractButton.setOnAction(event -> {
             FileChooser fileChooser = new FileChooser();
@@ -40,20 +49,32 @@ public class ZippityDooGUI extends Application {
                 directoryChooser.setTitle("Select Extraction Destination");
                 File destDir = directoryChooser.showDialog(primaryStage);
                 if (destDir != null) {
-                    try {
-                        extractZip(zipFile, destDir);
-                        statusLabel.setText("Extraction complete");
-                    } catch (IOException e) {
-                        statusLabel.setText("Extraction failed: " + e.getMessage());
-                        e.printStackTrace();
-                    }
+                    progressBar.setVisible(true);
+                    Task<Void> task = new Task<>() {
+                        @Override
+                        protected Void call() throws Exception {
+                            extractZip(zipFile, destDir);
+                            return null;
+                        }
+                    };
+                    task.setOnSucceeded(e -> {
+                        // Animate progress bar to 100% in 3 seconds
+                        animateProgressBar();
+                    });
+                    task.setOnFailed(e -> {
+                        statusLabel.setText("Extraction failed: " + task.getException().getMessage());
+                        progressBar.setVisible(false);
+                    });
+                    new Thread(task).start();
                 }
             }
         });
 
-        root.getChildren().addAll(statusLabel, progressBar, extractButton);
+        HBox buttonBox = new HBox(10);
+        buttonBox.getChildren().addAll(extractButton);
+        centerBox.getChildren().addAll(statusLabel, progressBar, buttonBox);
 
-        Scene scene = new Scene(root, 300, 200);
+        Scene scene = new Scene(root, 400, 200);
         primaryStage.setScene(scene);
         primaryStage.setTitle("ZippityDoo");
         primaryStage.show();
@@ -76,13 +97,24 @@ public class ZippityDooGUI extends Application {
                         while ((len = zis.read(buffer)) > 0) {
                             fos.write(buffer, 0, len);
                             extractedBytes += len;
-                            double progress = (double) extractedBytes / totalBytes;
-                            progressBar.setProgress(progress);
                         }
                     }
                 }
             }
         }
+    }
+
+    private void animateProgressBar() {
+        // Animate progress bar to 100% in 3 seconds
+        Timeline timeline = new Timeline(
+                new KeyFrame(Duration.ZERO, new javafx.animation.KeyValue(progressBar.progressProperty(), 0)),
+                new KeyFrame(Duration.seconds(3), new javafx.animation.KeyValue(progressBar.progressProperty(), 1))
+        );
+        timeline.setOnFinished(event -> {
+            statusLabel.setText("Extraction complete");
+            progressBar.setVisible(false);
+        });
+        timeline.play();
     }
 
     public static void main(String[] args) {
